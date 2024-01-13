@@ -1,5 +1,5 @@
 import streamlit as st
-from langchain.prompts import ChatPromptTemplate
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.storage import LocalFileStore
 from langchain.vectorstores import FAISS
 from langchain.text_splitter import CharacterTextSplitter
@@ -8,6 +8,8 @@ from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.callbacks.base import BaseCallbackHandler
+from langchain.memory import ConversationBufferMemory
+from operator import itemgetter
 
 
 st.set_page_config(page_title="Document GPT", page_icon="📄")
@@ -20,14 +22,11 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box = st.empty()
 
     def on_llm_end(self, *args, **kwargs):
-        save_message(self.message,"ai")
+        save_message(self.message, "ai")
 
     def on_llm_new_token(self, token: str, *args, **kwargs):
         self.message += token
         self.message_box.markdown(self.message)
-
-
-llm = ChatOpenAI(temperature=0.1, streaming=True, callbacks=[ChatCallbackHandler()])
 
 
 @st.cache_data(show_spinner="Embedding file...")
@@ -49,7 +48,7 @@ def embed_file(file):
     return retriever
 
 
-def save_message(message,role):
+def save_message(message, role):
     return st.session_state["messages"].append({"message": message, "role": role})
 
 
@@ -57,7 +56,7 @@ def send_message(message, role, save=True):
     with st.chat_message(role):
         st.markdown(message)
     if save:
-        save_message(message,role)
+        save_message(message, role)
 
 
 def paint_history():
@@ -69,6 +68,12 @@ def format_docs(docs):
     return "\n\n".join(document.page_content for document in docs)
 
 
+def save_memory(input, output):
+    st.session_state["memory"].save_context({"input": input}, {"output": output})
+
+
+llm = ChatOpenAI(temperature=0.1, streaming=True, callbacks=[ChatCallbackHandler()])
+
 prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -76,9 +81,11 @@ prompt = ChatPromptTemplate.from_messages(
             """
             Answer the question using ONLY the following context. If you don't know the answer, just say you don't know. DON'T make anything up. 
 
-            Context{context}
+            Context
+            {context}
             """,
         ),
+        MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{question}"),
     ]
 )
@@ -89,7 +96,7 @@ st.markdown(
     """
 Welcome!
 
-Use this cahtbot to ask question to an AI about your file
+Use this chatbot to ask question to an AI about your file
 
 Upload your file on the sidebar.
 """
@@ -111,6 +118,11 @@ if file:
         chain = (
             {
                 "context": retriever | RunnableLambda(format_docs),
+                # Add memory
+                "chat_history": RunnableLambda(
+                    st.session_state["memory"].load_memory_variables
+                )
+                | itemgetter("chat_history"),
                 "question": RunnablePassthrough(),
             }
             | prompt
@@ -118,8 +130,19 @@ if file:
         )
         # docs = retriever.invoke(message)
         # docs = "\n\n".join(document.page_content for document in docs)
-        # prompt = template.format_messages(context = docs, question = message)
+        # prompt = prompt.format_messages(context = docs, question = message,chat_history = st.session_state["memory"].load_memory_variables({})["chat_history"])
+        # st.write(prompt)
         with st.chat_message("ai"):
-            chain.invoke(message)
+            result = chain.invoke(message)
+            # save the interaction in the memory
+            save_memory(message, result.content)
+
 else:
     st.session_state["messages"] = []
+    # Add memory
+    st.session_state["memory"] = ConversationBufferMemory(
+        llm=llm,
+        max_token_limit=100,
+        memory_key="chat_history",
+        return_messages=True,
+    )
