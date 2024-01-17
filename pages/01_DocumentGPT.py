@@ -8,7 +8,7 @@ from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationBufferWindowMemory
 from operator import itemgetter
 
 
@@ -140,9 +140,8 @@ if file:
 else:
     st.session_state["messages"] = []
     # Add memory
-    st.session_state["memory"] = ConversationBufferMemory(
-        llm=llm,
-        max_token_limit=100,
+    st.session_state["memory"] = ConversationBufferWindowMemory(
         memory_key="chat_history",
         return_messages=True,
+        k=5,
     )

@@ -4,15 +4,15 @@ from langchain.storage import LocalFileStore
 from langchain.vectorstores import FAISS
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.document_loaders import UnstructuredFileLoader
-from langchain.chat_models import ChatOllama
-from langchain.embeddings import OllamaEmbeddings, CacheBackedEmbeddings
+from langchain.chat_models import ChatOpenAI,ChatOllama
+from langchain.embeddings import OpenAIEmbeddings,OllamaEmbeddings,CacheBackedEmbeddings
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationBufferWindowMemory
 from operator import itemgetter
 
 
-st.set_page_config(page_title="Private GPT", page_icon="🔒")
+st.set_page_config(page_title="Private GPT", page_icon="📄")
 
 
 class ChatCallbackHandler(BaseCallbackHandler):
@@ -30,20 +30,23 @@ class ChatCallbackHandler(BaseCallbackHandler):
 
 
 @st.cache_data(show_spinner="Embedding file...")
-def embed_file(file):
+def embed_file(file, model_name):
     file_content = file.read()
     file_path = f"./.cache/private_files/{file.name}"
     with open(file_path, "wb") as f:
         f.write(file_content)
-    cache_dir = LocalFileStore(f"./.cache/private_embeddings/{file.name}")
+    cache_dir = LocalFileStore(f"./.cache/private_embeddings/{model_name}/{file.name}")
     splitter = CharacterTextSplitter.from_tiktoken_encoder(
         separator="\n", chunk_size=600, chunk_overlap=100
     )
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
-    embeddings = OllamaEmbeddings(
-        model = "mistral:latest"
-    )
+
+    if model_name == "GPT-4":
+        embeddings = OpenAIEmbeddings()
+    elif model_name == "Phi2":
+        embeddings = OllamaEmbeddings(model = "phi")
+
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
     vectorstore = FAISS.from_documents(docs, cached_embeddings)
     retriever = vectorstore.as_retriever()
@@ -73,8 +76,6 @@ def format_docs(docs):
 def save_memory(input, output):
     st.session_state["memory"].save_context({"input": input}, {"output": output})
 
-
-llm = ChatOllama(model = "mistral:latest", temperature=0.1, streaming=True, callbacks=[ChatCallbackHandler()])
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -109,8 +110,15 @@ with st.sidebar:
         "Upload a .txt .pdf or .docx file", type=["pdf", "txt", "docx"]
     )
 
+    model_name = st.selectbox("Select Model",["GPT-4", "Phi2"])
+
+    if model_name == "GPT-4":
+        llm = ChatOpenAI(temperature=0.1, streaming=True, callbacks=[ChatCallbackHandler()])
+    elif model_name == "Phi2":
+        llm = ChatOllama(model = "phi", temperature=0.1, streaming=True, callbacks=[ChatCallbackHandler()])
+
 if file:
-    retriever = embed_file(file)
+    retriever = embed_file(file, model_name)
     send_message("I'm ready! Ask anyway!", "ai", save=False)
     paint_history()
     message = st.chat_input("Ask anything about your file...")
@@ -130,21 +138,15 @@ if file:
             | prompt
             | llm
         )
-        # docs = retriever.invoke(message)
-        # docs = "\n\n".join(document.page_content for document in docs)
-        # prompt = prompt.format_messages(context = docs, question = message,chat_history = st.session_state["memory"].load_memory_variables({})["chat_history"])
-        # st.write(prompt)
         with st.chat_message("ai"):
             result = chain.invoke(message)
-            # save the interaction in the memory
             save_memory(message, result.content)
 
 else:
     st.session_state["messages"] = []
     # Add memory
-    st.session_state["memory"] = ConversationBufferMemory(
-        llm=llm,
-        max_token_limit=100,
+    st.session_state["memory"] = ConversationBufferWindowMemory(
         memory_key="chat_history",
         return_messages=True,
+        k=5,
     )
