@@ -139,7 +139,10 @@ if file:
             | llm
         )
         with st.chat_message("ai"):
-            result = chain.invoke(message)
+            if model_name == "Phi2":
+                result = chain.invoke("Insturct: "+message+"\nOutput:")
+            else:
+                result = chain.invoke(message)
             save_memory(message, result.content)
 
 else:
