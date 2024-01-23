@@ -23,6 +23,7 @@ st.set_page_config(page_title="Quiz GPT", page_icon="❓")
 st.title("Quiz GPT")
 
 with st.sidebar:
+    docs=None
     choice = st.selectbox("Choose what you want to use", ("File", "Wekipedia Article"))
     if choice == "File":
         file = st.file_uploader(
@@ -37,3 +38,16 @@ with st.sidebar:
             retriever = WikipediaRetriever(top_k_results=5)
             with st.status("Searching Wikipedia..."):
                 docs = retriever.get_relevant_documents(topic)
+
+if not docs:
+    st.markdown(
+        """
+    Welcome to QuizGPT.
+                
+    I will make a quiz from Wikipedia articles or files you upload to test your knowledge and help you study.
+                
+    Get started by uploading a file or searching on Wikipedia in the sidebar.
+    """
+    )
+else:
+    st.write(docs)

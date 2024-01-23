@@ -4,7 +4,7 @@ from langchain.storage import LocalFileStore
 from langchain.vectorstores import FAISS
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.document_loaders import UnstructuredFileLoader
-from langchain.chat_models import ChatOpenAI,ChatOllama
+from langchain.chat_models import ChatOpenAI, ChatOllama
 from langchain.embeddings import OpenAIEmbeddings,OllamaEmbeddings,CacheBackedEmbeddings
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.callbacks.base import BaseCallbackHandler
@@ -12,7 +12,7 @@ from langchain.memory import ConversationBufferWindowMemory
 from operator import itemgetter
 
 
-st.set_page_config(page_title="Private GPT", page_icon="📄")
+st.set_page_config(page_title="Private GPT", page_icon="🔒")
 
 
 class ChatCallbackHandler(BaseCallbackHandler):
@@ -41,11 +41,11 @@ def embed_file(file, model_name):
     )
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
-
+    
     if model_name == "GPT-4":
         embeddings = OpenAIEmbeddings()
     elif model_name == "Phi2":
-        embeddings = OllamaEmbeddings(model = "phi")
+        embeddings = OllamaEmbeddings(model="phi")
 
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
     vectorstore = FAISS.from_documents(docs, cached_embeddings)
@@ -110,12 +110,21 @@ with st.sidebar:
         "Upload a .txt .pdf or .docx file", type=["pdf", "txt", "docx"]
     )
 
-    model_name = st.selectbox("Select Model",["GPT-4", "Phi2"])
+    model_name = st.selectbox("Select Model", ["GPT-4", "Phi2"])
 
     if model_name == "GPT-4":
-        llm = ChatOpenAI(temperature=0.1, streaming=True, callbacks=[ChatCallbackHandler()])
+        llm = ChatOpenAI(
+            temperature=0.1, streaming=True, callbacks=[ChatCallbackHandler()]
+        )
     elif model_name == "Phi2":
-        llm = ChatOllama(model = "phi", temperature=0.1, streaming=True, callbacks=[ChatCallbackHandler()])
+        llm = ChatOllama(
+            model="phi",
+            temperature=0.1,
+            streaming=True,
+            callbacks=[ChatCallbackHandler()],
+        )
+    st.session_state["model_name"] = model_name
+
 
 if file:
     retriever = embed_file(file, model_name)
@@ -140,7 +149,7 @@ if file:
         )
         with st.chat_message("ai"):
             if model_name == "Phi2":
-                result = chain.invoke("Insturct: "+message+"\nOutput:")
+                result = chain.invoke("Insturct: " + message + "\nOutput:")
             else:
                 result = chain.invoke(message)
             save_memory(message, result.content)
